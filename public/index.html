@@ -1,0 +1,431 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>NextJS Demo Auth API — Developer Docs (Updated)</title>
+    <style>
+      body {
+        font-family: Inter, system-ui, Segoe UI, Roboto, Helvetica, Arial,
+          sans-serif;
+        line-height: 1.45;
+        margin: 0;
+        padding: 24px;
+        background: #f7fafc;
+        color: #111;
+      }
+      .wrap {
+        max-width: 1000px;
+        margin: 0 auto;
+        background: #fff;
+        padding: 20px;
+        border-radius: 12px;
+        box-shadow: 0 6px 18px rgba(20, 20, 40, 0.06);
+      }
+      header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+      }
+      h1 {
+        margin: 0;
+        font-size: 22px;
+      }
+      .tabs {
+        display: flex;
+        gap: 8px;
+        margin-top: 16px;
+        border-bottom: 1px solid #eef2ff;
+        padding-bottom: 12px;
+      }
+      .tab-btn {
+        background: transparent;
+        border: 0;
+        padding: 8px 12px;
+        border-radius: 8px;
+        cursor: pointer;
+        font-weight: 600;
+      }
+      .tab-btn.active {
+        background: #eef2ff;
+      }
+      .muted {
+        color: #556;
+      }
+      .section {
+        margin-top: 18px;
+      }
+      .route {
+        padding: 12px;
+        border-radius: 8px;
+        background: #fbfbff;
+        margin: 12px 0;
+        border: 1px solid #eef2ff;
+      }
+      pre {
+        background: #0b1220;
+        color: #e6eef8;
+        padding: 12px;
+        border-radius: 8px;
+        overflow: auto;
+        font-size: 13px;
+      }
+      code {
+        background: #eef2ff;
+        padding: 2px 6px;
+        border-radius: 6px;
+        font-family: monospace;
+      }
+      table {
+        width: 100%;
+        border-collapse: collapse;
+        margin-top: 8px;
+      }
+      th,
+      td {
+        border: 1px solid #e6eef8;
+        padding: 10px;
+        text-align: left;
+      }
+      th {
+        background: #f1f5f9;
+      }
+      .small {
+        font-size: 13px;
+        color: #444;
+      }
+      .badge {
+        display: inline-block;
+        padding: 4px 8px;
+        border-radius: 6px;
+        background: #eef2ff;
+        margin-right: 8px;
+        font-size: 12px;
+      }
+      .models-list { display: grid; gap: 12px; }
+      .model-card { background:#fafafa; border:1px solid #eef2ff; padding:12px; border-radius:8px; display: grid; }
+      footer { font-size:13px; color:#666; margin-top:20px; border-top:1px solid #eee; padding-top:12px }
+    </style>
+  </head>
+  <body>
+    <div class="wrap">
+      <header>
+        <div>
+          <h1>Flashing Factory Demo Auth API — Developer Documentation (Updated)</h1>
+          <p class="muted">Base path: <code>/api/auth</code>. Two tabs: <strong>API</strong> and <strong>Models</strong>.</p>
+        </div>
+      </header>
+
+      <div class="tabs" role="tablist">
+        <button class="tab-btn active" data-tab="apiTab">API</button>
+        <button class="tab-btn" data-tab="modelsTab">Models</button>
+      </div>
+
+      <!-- API Tab -->
+      <div id="apiTab" class="section" style="display:block">
+        <h2>Quick overview</h2>
+        <ul>
+          <li>Endpoints are mounted at <code>/api/auth/*</code>. Flow still supports: <strong>email verification → register (save info & send phone code) → phone verification → authenticated (JWT returned)</strong>, plus additional account management flows (password reset, change phone/email, delete account).</li>
+          <li>Authentication is issued as a JWT and set as an HttpOnly cookie named <code>auth_token</code> (dev-friendly fallback: token returned in JSON).</li>
+          <li>All verification codes (email/phone) use TTLs controlled by environment variables (see <code>MAIN_CODE_TTL_SEC</code>, <code>PASSWORD_RESET_TOKEN_EXPIRES</code>, etc.).</li>
+        </ul>
+
+        <h2>Common rules & validation</h2>
+        <table>
+          <tr><th>Rule</th><th>Details</th></tr>
+          <tr><td>Email</td><td>Case-insensitive. Validate format client- and server-side.</td></tr>
+          <tr><td>Password</td><td>Min length 8 recommended. Server stores bcrypt hash in <code>passwordHash</code>.</td></tr>
+          <tr><td>Phone</td><td>Store in E.164 recommended. Server tracks <code>phoneVerified</code>.</td></tr>
+          <tr><td>Verification codes</td><td>6-digit numeric for email/phone by default; environment-driven TTL. One-time-use.</td></tr>
+          <tr><td>Rate limiting</td><td>Applied to <code>/send-code</code> and repeated phone/email sends (see <code>sendCodeLimiter</code>).</td></tr>
+        </table>
+
+        <h2>Endpoints & examples (fetch)</h2>
+
+        <!-- check-email -->
+        <div class="route">
+          <div><span class="badge">POST</span><code>/api/auth/check-email</code> — Does this email exist (already verified)?</div>
+          <p><strong>Body (JSON)</strong>:
+            <pre>{ "email": "user@example.com" }</pre>
+          </p>
+          <p><strong>Response</strong>:
+            <pre>{ "ok": true, "exists": true }</pre>
+          </p>
+        </div>
+
+        <!-- send-code -->
+        <div class="route">
+          <div><span class="badge">POST</span><code>/api/auth/send-code</code> — Send email verification code</div>
+          <p><strong>Body (JSON)</strong>:
+            <pre>{ "email": "new@example.com" }</pre>
+          </p>
+          <p class="small">Sends a 6-digit code to the email. In dev mode, <code>previewUrl</code> or the code may be returned by the mailer helper.</p>
+        </div>
+
+        <!-- verify-code -->
+        <div class="route">
+          <div><span class="badge">POST</span><code>/api/auth/verify-code</code> — Verify email code</div>
+          <p><strong>Body (JSON)</strong>:
+            <pre>{ "email": "new@example.com", "code": "123456" }</pre>
+          </p>
+          <p class="small">Marks the verification record as used and creates a lightweight user record if needed (email verified).</p>
+        </div>
+
+        <!-- register -->
+        <div class="route">
+          <div><span class="badge">POST</span><code>/api/auth/register</code> — Save user info &amp; send phone verification code</div>
+          <p><strong>Body (JSON)</strong>:
+            <pre>{ "email":"new@example.com", "fullName":"Alice", "phone":"+1234567890", "password":"your-password" }</pre>
+          </p>
+          <p class="small">Requires email was already verified (a used verification record must exist). Creates/updates user and generates a phone verification code.</p>
+        </div>
+
+        <!-- resend-phone-code -->
+        <div class="route">
+          <div><span class="badge">POST</span><code>/api/auth/resend-phone-code</code> — Resend phone verification code</div>
+          <p><strong>Body (JSON)</strong>:
+            <pre>{ "email":"new@example.com", "phone":"+1234567890" }</pre>
+          </p>
+          <p class="small">Checks for an active (unexpired) code before creating a new one. Dev helper returns code in response.</p>
+        </div>
+
+        <!-- verify-phone-code -->
+        <div class="route">
+          <div><span class="badge">POST</span><code>/api/auth/verify-phone-code</code> — Verify phone code and return JWT</div>
+          <p><strong>Body (JSON)</strong>:
+            <pre>{ "phone":"+1234567890", "code":"654321" }</pre>
+          </p>
+          <p class="small">Marks <code>phoneVerified</code> and <code>verified</code>, issues JWT cookie (<code>auth_token</code>), returns user profile.</p>
+        </div>
+
+        <!-- login -->
+        <div class="route">
+          <div><span class="badge">POST</span><code>/api/auth/login</code> — Standard email + password login</div>
+          <p><strong>Body (JSON)</strong>:
+            <pre>{ "email":"user@example.com", "password":"your-password" }</pre>
+          </p>
+          <p class="small">Validates credentials, issues JWT cookie and user info on success.</p>
+        </div>
+
+        <!-- profile -->
+        <div class="route">
+          <div><span class="badge">GET</span><code>/api/auth/profile</code> — Get authenticated user's profile</div>
+          <p><strong>Headers</strong>:
+            <pre>Authorization: Bearer &lt;token&gt; (or rely on <code style="background-color: #0b1220;">auth_token</code> cookie)</pre>
+          </p>
+        </div>
+
+        <!-- logout -->
+        <div class="route">
+          <div><span class="badge">POST</span><code>/api/auth/logout</code> — Clear auth cookie</div>
+          <p class="small">Clears <code>auth_token</code> cookie.</p>
+        </div>
+
+        <!-- password reset -->
+        <div class="route">
+          <div><span class="badge">POST</span><code>/api/auth/reset-password-request</code> — Request password reset link</div>
+          <p><strong>Body (JSON)</strong>:
+            <pre>{ "email": "user@example.com" }</pre>
+          </p>
+          <p class="small">Generates a reset token (stored in PasswordReset collection) and emails a link. Dev helper may return <code>previewUrl</code> and link in response.</p>
+        </div>
+
+        <div class="route">
+          <div><span class="badge">POST</span><code>/api/auth/reset-password</code> — Reset password</div>
+          <p><strong>Body (JSON)</strong>:
+            <pre>{ "token":"abc123", "newPassword":"new-pass" }</pre>
+          </p>
+          <p class="small">Verifies token, updates <code>passwordHash</code>, marks token used, clears session cookie.</p>
+        </div>
+
+        <!-- update-fullname -->
+        <div class="route">
+          <div><span class="badge">POST</span><code>/api/auth/update-fullname</code> — Update full name (authenticated)</div>
+          <p class="small">Requires auth; updates user's <code>fullName</code>.</p>
+        </div>
+
+        <!-- change-phone -->
+        <div class="route">
+          <div><span class="badge">POST</span><code>/api/auth/change-phone-request</code> — Request phone change (sends code to new phone)</div>
+          <p class="small">Generates <code>PhoneVerificationCode</code> with purpose <code>change_phone</code>, sends SMS.</p>
+        </div>
+
+        <div class="route">
+          <div><span class="badge">POST</span><code>/api/auth/change-phone-verify</code> — Verify phone change</div>
+          <p class="small">Expects <code>newPhone</code> &amp; <code>code</code>, marks code used and updates user's phone &amp; phoneVerified.</p>
+        </div>
+
+        <!-- change-email -->
+        <div class="route">
+          <div><span class="badge">POST</span><code>/api/auth/change-email-request</code> — Start email change flow</div>
+          <p class="small">Creates <code>ChangeEmailRequest</code> (tokens for old/new), sends token to old email first.</p>
+        </div>
+
+        <div class="route">
+          <div><span class="badge">POST</span><code>/api/auth/change-email-verify-old</code> — Verify old email token</div>
+          <p class="small">Validates tokenOld, advances stage to <code>await_new</code> and sends tokenNew to the new email.</p>
+        </div>
+
+        <div class="route">
+          <div><span class="badge">POST</span><code>/api/auth/resend-new-email-code</code> — Resend token to new email (dev only may return code)</div>
+        </div>
+
+        <div class="route">
+          <div><span class="badge">POST</span><code>/api/auth/change-email-verify-new</code> — Verify new email token and finalize change</div>
+          <p class="small">On success updates user's email and sets <code>emailVerified</code> true. Clears session cookie to force re-auth if desired.</p>
+        </div>
+
+        <!-- delete account -->
+        <div class="route">
+          <div><span class="badge">POST</span><code>/api/auth/delete-account-verify</code> — Verify password and get short-lived delete token</div>
+          <p class="small">Checks password, generates a short-lived token (stored in PasswordReset collection with purpose <code>delete_account</code>).</p>
+        </div>
+
+        <div class="route">
+          <div><span class="badge">POST</span><code>/api/auth/delete-account</code> — Confirm deletion</div>
+          <p class="small">Expects <code>deleteToken</code> and <code>reason</code>. Archives user to <code>DeletedUser</code> and removes the user record. Clears cookie.</p>
+        </div>
+
+        <h2>Error codes summary</h2>
+        <table>
+          <tr><th>HTTP Status</th><th>Meaning</th></tr>
+          <tr><td>200</td><td>OK (success)</td></tr>
+          <tr><td>201</td><td>Created (new resource)</td></tr>
+          <tr><td>400</td><td>Bad request (validation)</td></tr>
+          <tr><td>401</td><td>Unauthorized (invalid credentials / token)</td></tr>
+          <tr><td>403</td><td>Forbidden</td></tr>
+          <tr><td>404</td><td>Not found</td></tr>
+          <tr><td>429</td><td>Too many requests (rate limit)</td></tr>
+          <tr><td>500</td><td>Server error</td></tr>
+        </table>
+
+      </div>
+
+      <!-- Models Tab -->
+      <div id="modelsTab" class="section" style="display:none">
+        <h2>Models — Mongoose schemas used by the routes</h2>
+        <p class="small muted">Below are the model schemas reflected in your Express routes. These are the exact schemas used in your code (kept for reference & copy-paste).</p>
+
+        <div class="models-list">
+
+          <div class="model-card">
+            <h3>User (models/User.js)</h3>
+            <pre><code style="background-color: #0b1220;">const mongoose = require('mongoose');
+
+const userSchema = new mongoose.Schema({
+  email: { type: String, required: true, unique: true, lowercase: true, trim: true },
+  passwordHash: { type: String },
+  fullName: { type: String },
+  phone: { type: String, index: true, unique: true },
+  verified: { type: Boolean, default: false },
+  emailVerified: { type: Boolean, default: false },
+  phoneVerified: { type: Boolean, default: false },
+  deleted: { type: Boolean, default: false },
+  deletedAt: { type: Date, default: null },
+  createdAt: { type: Date, default: Date.now },
+  updatedAt: { type: Date }
+}, { timestamps: true });
+
+userSchema.pre('save', function (next) { this.updatedAt = new Date(); next(); });
+
+module.exports = mongoose.model('User', userSchema);
+</code></pre>
+          </div>
+
+          <div class="model-card">
+            <h3>VerificationCode (models/VerificationCode.js)</h3>
+            <pre><code style="background-color: #0b1220;">const mongoose = require('mongoose');
+
+const codeSchema = new mongoose.Schema({
+  email: { type: String, required: true, lowercase: true, trim: true, index: true },
+  code: { type: String, required: true },
+  purpose: { type: String, default: 'email_verification' },
+  userId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null },
+  expiresAt: { type: Date, required: true, index: true },
+  used: { type: Boolean, default: false },
+  createdAt: { type: Date, default: Date.now }
+}, { timestamps: true });
+
+codeSchema.index({ expiresAt: 1 }, { expireAfterSeconds: 0 });
+
+module.exports = mongoose.model('VerificationCode', codeSchema);
+</code></pre>
+          </div>
+
+          <div class="model-card">
+            <h3>PhoneVerificationCode (models/PhoneVerificationCode.js)</h3>
+            <pre><code style="background-color: #0b1220;">const mongoose = require('mongoose');
+
+const phoneVerificationCodeSchema = new mongoose.Schema({
+  phone: { type: String, required: true, index: true },
+  code: { type: String, required: true },
+  userId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null },
+  purpose: { type: String, default: 'phone_verification' },
+  expiresAt: { type: Date, required: true, index: true },
+  used: { type: Boolean, default: false },
+  attempts: { type: Number, default: 0 }
+}, { timestamps: true });
+
+phoneVerificationCodeSchema.index({ expiresAt: 1 }, { expireAfterSeconds: 0 });
+
+module.exports = mongoose.model('PhoneVerificationCode', phoneVerificationCodeSchema);
+</code></pre>
+          </div>
+
+          <div class="model-card">
+            <h3>PasswordReset (models/PasswordReset.js)</h3>
+            <pre><code style="background-color: #0b1220;">const mongoose = require('mongoose');
+
+const passwordResetSchema = new mongoose.Schema({
+  userId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true, index: true },
+  token: { type: String, required: true },
+  purpose: { type: String, default: 'password_reset' },
+  expiresAt: { type: Date, required: true, index: true },
+  used: { type: Boolean, default: false }
+}, { timestamps: true });
+
+passwordResetSchema.index({ expiresAt: 1 }, { expireAfterSeconds: 0 });
+
+module.exports = mongoose.model('PasswordReset', passwordResetSchema);
+</code></pre>
+          </div>
+
+          <div class="model-card">
+            <h3>DeletedUser (models/DeletedUser.js)</h3>
+            <pre><code style="background-color: #0b1220;">const mongoose = require('mongoose');
+
+const deletedUserSchema = new mongoose.Schema({
+  email: { type: String, lowercase: true, trim: true },
+  phone: { type: String },
+  fullName: { type: String },
+  reason: { type: String },
+  archivedAt: { type: Date, default: Date.now },
+  meta: { type: Object, default: {} }
+}, { timestamps: true });
+
+module.exports = mongoose.model('DeletedUser', deletedUserSchema);
+</code></pre>
+          </div>
+
+        </div>
+      </div>
+
+      <footer>
+        <p class="small">Created and developed by <a href="https://github.com/amirreza-yar">Amirreza</a></p>
+      </footer>
+    </div>
+
+    <script>
+      document.querySelectorAll('.tab-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+          document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+          btn.classList.add('active');
+          const tab = btn.getAttribute('data-tab');
+          document.querySelectorAll('#apiTab, #modelsTab').forEach(el => el.style.display = 'none');
+          document.getElementById(tab).style.display = 'block';
+        });
+      });
+    </script>
+  </body>
+</html>
