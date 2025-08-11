@@ -1,18 +1,29 @@
+// config/db.js
 const mongoose = require('mongoose');
 
+const MONGO_URI = process.env.MONGODB_URI;
+
+if (!MONGO_URI) {
+  throw new Error('MONGO_URI is required in env');
+}
+
+let cached = global.__mongo; // reuse across lambda invocations
+
 async function connectDB() {
-  const MONGODB_URI = process.env.MONGODB_URI;
-  if (!MONGODB_URI) {
-    console.error('MONGODB_URI not set in .env');
-    process.exit(1);
+  if (cached && cached.conn) {
+    return cached.conn;
   }
-  try {
-    await mongoose.connect(MONGODB_URI, { dbName: 'nextjs_demo_auth' });
-    console.log('MongoDB connected');
-  } catch (err) {
-    console.error('MongoDB connection failed:', err.message);
-    process.exit(1);
+
+  if (!cached) cached = global.__mongo = { conn: null, promise: null };
+
+  if (!cached.promise) {
+    cached.promise = mongoose.connect(MONGO_URI, {
+      // mongoose options you use
+    }).then(m => m.connection);
   }
+
+  cached.conn = await cached.promise;
+  return cached.conn;
 }
 
 module.exports = { connectDB };
