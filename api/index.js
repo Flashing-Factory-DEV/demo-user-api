@@ -4,9 +4,9 @@ const path = require('path');
 const express = require('express');
 const cors = require('cors');
 const cookieParser = require('cookie-parser');
-const { connectDB } = require('./config/db');
+const { connectDB } = require('../config/db');
 
-const authRoutes = require('./routes/auth');
+const authRoutes = require('../routes/auth');
 const app = express();
 
 app.use(express.json());
