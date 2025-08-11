@@ -4,6 +4,7 @@ const path = require('path');
 const express = require('express');
 const cors = require('cors');
 const cookieParser = require('cookie-parser');
+const { connectDB } = require('./config/db');
 
 const authRoutes = require('./routes/auth');
 const app = express();
@@ -20,8 +21,6 @@ app.get('/api/health', (req, res) => res.json({ ok: true }));
 app.use(express.static(path.join(__dirname, 'public')));
 
 // server.js
-const app = require('./app');
-const { connectDB } = require('./config/db');
 
 const PORT = process.env.PORT || 3000;
 
