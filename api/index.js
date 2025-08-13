@@ -12,12 +12,18 @@ const app = express();
 const FRONTEND = process.env.FRONTEND_URL
 
 app.use(express.json());
-app.use(cors({
-    origin: 'http://localhost:3000',          // must be exact origin, not '*'
-    credentials: true,         // allows Set-Cookie and Cookie header
-    methods: ['GET','POST','PUT','DELETE','OPTIONS'],
-    allowedHeaders: ['Content-Type','Authorization'],
-  }));
+const corsOptions = {
+    origin: (origin, callback) => {
+        // origin is undefined for non-browser requests (curl, Postman) — allow those too
+        callback(null, origin || true) // echo origin or allow non-browser
+    },
+    credentials: true, // allow Set-Cookie and Cookie
+    methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+    allowedHeaders: ['Content-Type', 'Authorization'],
+}
+
+app.use(cors(corsOptions))
+app.options('*', cors(corsOptions)) // preflight handler
 app.use(cookieParser());
 
 // mount routes exactly as before
