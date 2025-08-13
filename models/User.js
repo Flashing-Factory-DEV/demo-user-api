@@ -5,7 +5,7 @@ const userSchema = new mongoose.Schema({
   email: { type: String, required: true, unique: true, lowercase: true, trim: true },
   passwordHash: { type: String },
   fullName: { type: String },
-  phone: { type: String, index: true, unique: true, },
+  phone: { type: String, index: true },
   // overall account status (you can use separate flags below)
   verified: { type: Boolean, default: false }, // deprecated/optional - kept for backward compat
   emailVerified: { type: Boolean, default: false },

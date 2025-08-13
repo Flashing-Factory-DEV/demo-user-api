@@ -18,14 +18,15 @@ async function getTransporter() {
         }
       });
     }
-    const testAccount = await nodemailer.createTestAccount();
+
+    // If you set ETHEREAL_EMAIL_USERNAME / ETHEREAL_EMAIL_PASSWORD in env, use them.
     return nodemailer.createTransport({
       host: 'smtp.ethereal.email',
       port: 587,
       secure: false,
       auth: {
-        user: testAccount.user,
-        pass: testAccount.pass
+        user: process.env.ETHEREAL_EMAIL_USERNAME,
+        pass: process.env.ETHEREAL_EMAIL_PASSWORD
       }
     });
   })();
@@ -36,17 +37,16 @@ async function getTransporter() {
 /**
  * Send a verification email containing a code or short text.
  * Returns: { previewUrl?, info, codeOrText }.
- * - codeOrText can be a 6-digit code or arbitrary text message.
  */
-async function sendVerificationEmail(email, codeOrText, ttlMinutes = 15, opts = {}) {
+async function sendVerificationEmail(email, codeOrText, ttlMinutes = 30, opts = {}) {
   const transporter = await getTransporter();
 
   const subject = opts.subject || 'Your verification code';
-  const text = opts.text || `Your verification code is: ${codeOrText} (expires in ${ttlMinutes} minutes)`;
-  const html = opts.html || `<p>Your verification code is: <strong>${codeOrText}</strong></p><p>Expires in ${ttlMinutes} minutes.</p>`;
+  const text = opts.text || `Your verification code is: ${codeOrText} (expires in ${ttlMinutes} seconds)`;
+  const html = opts.html || `<p>Your verification code is: <strong>${codeOrText}</strong></p><p>Expires in ${ttlMinutes} seconds.</p>`;
 
   const mailOptions = {
-    from: process.env.FROM_EMAIL || 'no-reply@example.com',
+    from: process.env.FROM_EMAIL || 'no-reply@flashing-factory-dev.com',
     to: email,
     subject,
     text,

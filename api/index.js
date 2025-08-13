@@ -9,8 +9,15 @@ const { connectDB } = require('../config/db');
 const authRoutes = require('../routes/auth');
 const app = express();
 
+const FRONTEND = process.env.FRONTEND_URL
+
 app.use(express.json());
-app.use(cors());
+app.use(cors({
+    origin: 'http://localhost:3000',          // must be exact origin, not '*'
+    credentials: true,         // allows Set-Cookie and Cookie header
+    methods: ['GET','POST','PUT','DELETE','OPTIONS'],
+    allowedHeaders: ['Content-Type','Authorization'],
+  }));
 app.use(cookieParser());
 
 // mount routes exactly as before

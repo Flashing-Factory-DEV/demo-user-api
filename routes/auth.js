@@ -16,7 +16,7 @@ const PasswordReset = require('../models/PasswordReset');
 const ChangeEmailRequest = require('../models/ChangeEmailRequest');
 const DeletedUser = require('../models/DeletedUser');
 
-const sendCodeLimiter = rateLimit({ windowMs: 60 * 1000, max: 5, message: { error: 'Too many requests' } });
+const sendCodeLimiter = rateLimit({ windowMs: 60 * 1000, max: 20, message: { error: 'Too many requests' } });
 
 const PhoneVerificationCode = require('../models/PhoneVerificationCode');
 const { sendVerificationSMS } = require('../utils/sms');
@@ -57,6 +57,12 @@ function randToken(len = 48) {
     return crypto.randomBytes(len).toString('hex');
 }
 
+// helper: 5-digit generator
+function generate5DigitCode() {
+    return Math.floor(10000 + Math.random() * 90000).toString(); // 10000-99999
+}
+
+
 router.post('/auth/check-email', async (req, res) => {
     const { email } = req.body;
     if (!email) return res.status(400).json({ ok: false, error: 'email required' });
@@ -67,10 +73,11 @@ router.post('/auth/check-email', async (req, res) => {
 router.post('/auth/send-code', sendCodeLimiter, async (req, res) => {
     try {
         const { email } = req.body;
-        if (!email) return res.status(400).json({ ok: false, error: 'email required' });
+        if (!email) return res.status(400).json({ ok: false, error: 'email required', apiCode: '100101' });
 
         const existingUser = await User.findOne({ email: email.toLowerCase() });
-        if (existingUser && existingUser.verified) return res.status(400).json({ ok: false, error: 'email already registered' });
+        console.log(email, existingUser)
+        if (existingUser) return res.status(400).json({ ok: false, error: 'email already registered', apiCode: '100102' });
 
         // check for an unexpired code
         const now = new Date();
@@ -82,38 +89,38 @@ router.post('/auth/send-code', sendCodeLimiter, async (req, res) => {
 
         if (active) {
             const waitMs = active.expiresAt - now;
-            return res.status(429).json({ ok: false, error: `Please wait ${Math.ceil(waitMs / 1000)}s before requesting another code` });
+            return res.status(429).json({ ok: false, error: `Please wait ${Math.ceil(waitMs / 1000)}s before requesting another code`, apiCode: '100103' });
         }
 
-        const code = Math.floor(100000 + Math.random() * 900000).toString();
+        const code = Math.floor(10000 + Math.random() * 90000).toString(); // 5-digit
         const expiresAt = new Date(Date.now() + VERIF_EXPIRES_SEC * 1000);
         await VerificationCode.create({ email: email.toLowerCase(), code, expiresAt });
 
         try {
-            const { previewUrl, info, codeOrText } = await sendVerificationEmail(email, code, Math.ceil(VERIF_EXPIRES_SEC / 60));
+            const { previewUrl, info, codeOrText } = await sendVerificationEmail(email, code, Math.ceil(VERIF_EXPIRES_SEC));
 
             const resp = { ok: true };
             if (previewUrl) resp.previewUrl = previewUrl;
-            return res.json({ ok: true, previewUrl, code: codeOrText });
-
+            // In dev we include the code for easier testing — remove this in prod
+            return res.json({ ok: true, previewUrl, code: codeOrText, apiCode: '100100' });
         } catch (err) {
             console.error(err);
-            return res.status(500).json({ ok: false, error: 'failed to send email' });
+            return res.status(500).json({ ok: false, error: 'failed to send email', apiCode: '100104' });
         }
     } catch (err) {
         console.error(err);
-        return res.status(500).json({ ok: false, error: 'server error' });
+        return res.status(500).json({ ok: false, error: 'server error', apiCode: '100199' });
     }
 });
 
 router.post('/auth/verify-code', async (req, res) => {
     try {
         const { email, code } = req.body;
-        if (!email || !code) return res.status(400).json({ ok: false, error: 'email and code required' });
+        if (!email || !code) return res.status(400).json({ ok: false, error: 'email and code required', apiCode: '100201' });
 
         const record = await VerificationCode.findOne({ email: email.toLowerCase(), code, used: false }).sort({ createdAt: -1 });
-        if (!record) return res.status(400).json({ ok: false, error: 'invalid code' });
-        if (record.expiresAt < new Date()) return res.status(400).json({ ok: false, error: 'code expired' });
+        if (!record) return res.status(400).json({ ok: false, error: 'invalid code', apiCode: '100202' });
+        if (record.expiresAt < new Date()) return res.status(400).json({ ok: false, error: 'code expired', apiCode: '100203' });
 
         record.used = true;
         await record.save();
@@ -121,38 +128,39 @@ router.post('/auth/verify-code', async (req, res) => {
         let user = await User.findOne({ email: email.toLowerCase(), phone: '' });
         if (!user) user = await User.create({ email: email.toLowerCase(), emailVerified: true });
 
-        return res.json({ ok: true });
+        return res.json({ ok: true, apiCode: '100200' });
     } catch (err) {
         console.error(err);
-        return res.status(500).json({ ok: false, error: 'server error' });
+        return res.status(500).json({ ok: false, error: 'server error', apiCode: '100299' });
     }
 });
 
 router.post('/auth/register', async (req, res) => {
     const { email, fullName, phone, password } = req.body;
     if (!email || !password || !fullName || !phone) {
-        return res.status(400).json({ ok: false, error: 'email, fullName, phone, and password required' });
+        return res.status(400).json({ ok: false, error: 'email, fullName, phone, and password required', apiCode: '100301' });
     }
 
     const usedCode = await VerificationCode.findOne({ email: email.toLowerCase(), used: true }).sort({ createdAt: -1 });
-    if (!usedCode) return res.status(400).json({ ok: false, error: 'email not verified' });
+    if (!usedCode) return res.status(400).json({ ok: false, error: 'email not verified', apiCode: '100302' });
 
     const existing = await User.findOne({ email: email.toLowerCase() });
-    if (existing && existing.passwordHash) return res.status(400).json({ ok: false, error: 'email already registered' });
+    if (existing && existing.passwordHash && existing.phoneVerified) {
+        return res.status(400).json({ ok: false, error: 'email already registered', apiCode: '100303' })
+    }
 
     const passwordHash = await bcrypt.hash(password, 12);
 
     // Upsert user but mark as not verified yet
     const user = await User.findOneAndUpdate(
         { email: email.toLowerCase() },
-        { email: email.toLowerCase(), fullName, phone, passwordHash, verified: false, phoneVerified: false },
+        { email: email.toLowerCase(), fullName: fullName, phone: phone, passwordHash: passwordHash, verified: false, phoneVerified: false },
         { upsert: true, new: true }
     );
 
     try {
         const now = new Date();
 
-        // Check if there is an active (unexpired, unused) phone verification code for this phone
         const activePhone = await PhoneVerificationCode.findOne({
             phone,
             used: false,
@@ -163,13 +171,13 @@ router.post('/auth/register', async (req, res) => {
             const waitMs = activePhone.expiresAt - now;
             return res.status(429).json({
                 ok: false,
-                error: `Please wait ${Math.ceil(waitMs / 1000)} seconds before requesting another phone code`,
+                error: `Please wait ${Math.ceil(waitMs / 1000)} seconds before requesting another phone code`, apiCode: '100304'
             });
         }
 
-        // Generate new phone verification code
-        const code = Math.floor(100000 + Math.random() * 900000).toString();
-        const expiresAt = new Date(Date.now() + PHONE_VERIF_EXPIRES_SEC * 1000); // use consistent expiry time
+        // 5-digit phone code
+        const code = Math.floor(10000 + Math.random() * 90000).toString();
+        const expiresAt = new Date(Date.now() + PHONE_VERIF_EXPIRES_SEC * 1000);
 
         await PhoneVerificationCode.create({
             phone,
@@ -182,10 +190,10 @@ router.post('/auth/register', async (req, res) => {
         // Send SMS (dev helper returns code in response)
         const smsResult = await sendVerificationSMS(phone, code);
 
-        return res.json({ ok: true, message: 'Phone verification code sent', phoneCode: smsResult.code });
+        return res.json({ ok: true, message: 'Phone verification code sent', phoneCode: smsResult.code, apiCode: '100300' });
     } catch (err) {
         console.error(err);
-        return res.status(500).json({ ok: false, error: 'server error' });
+        return res.status(500).json({ ok: false, error: 'server error', apiCode: '100399' });
     }
 });
 
@@ -196,54 +204,56 @@ router.post('/auth/resend-phone-code', async (req, res) => {
 
         // Check if there is an active (unexpired, unused) phone verification code for this phone
         const activePhone = await PhoneVerificationCode.findOne({
-            phone,
+            phone: phone,
             used: false,
             expiresAt: { $gt: now },
         }).sort({ createdAt: -1 });
 
-        const user = User.findOne({
+        const user = await User.findOne({
             phone: phone,
             email: email
-        })
+        });
 
         if (activePhone) {
             const waitMs = activePhone.expiresAt - now;
             return res.status(429).json({
                 ok: false,
-                error: `Please wait ${Math.ceil(waitMs / 1000)} seconds before requesting another phone code`,
+                error: `Please wait ${Math.ceil(waitMs / 1000)} seconds before requesting another phone code`, apiCode: '100401'
             });
         }
 
-        // Generate new phone verification code
-        const code = Math.floor(100000 + Math.random() * 900000).toString();
-        const expiresAt = new Date(Date.now() + PHONE_VERIF_EXPIRES_SEC * 1000); // use consistent expiry time
+        // Generate new 5-digit phone verification code
+        const code = Math.floor(10000 + Math.random() * 90000).toString();
+        const expiresAt = new Date(Date.now() + PHONE_VERIF_EXPIRES_SEC * 1000);
 
         await PhoneVerificationCode.create({
             phone,
             code,
             expiresAt,
-            userId: user._id,
+            userId: user?._id, // user may be null, but that's how your current code was structured
             purpose: 'register_phone',
         });
 
-        // Send SMS (dev helper returns code in response)
         const smsResult = await sendVerificationSMS(phone, code);
 
-        return res.json({ ok: true, message: 'Phone verification code sent', phoneCode: smsResult.code });
+        return res.json({ ok: true, message: 'Phone verification code sent', phoneCode: smsResult.code, apiCode: '100400' });
     } catch (err) {
         console.error(err);
-        return res.status(500).json({ ok: false, error: 'server error' });
+        return res.status(500).json({ ok: false, error: 'server error', apiCode: '100499' });
     }
-})
+});
+
 
 // Verify phone number
 router.post('/auth/verify-phone-code', async (req, res) => {
     const { phone, code } = req.body;
-    if (!phone || !code) return res.status(400).json({ ok: false, error: 'phone and code required' });
+    console.log(phone, code)
+    if (!phone || !code) return res.status(400).json({ ok: false, error: 'phone and code required', apiCode: '100501' });
 
     const record = await PhoneVerificationCode.findOne({ phone, code, used: false }).sort({ createdAt: -1 });
-    if (!record) return res.status(400).json({ ok: false, error: 'invalid code' });
-    if (record.expiresAt < new Date()) return res.status(400).json({ ok: false, error: 'code expired' });
+    console.log(record)
+    if (!record) return res.status(400).json({ ok: false, error: 'invalid code', apiCode: '100502' });
+    if (record.expiresAt < new Date()) return res.status(400).json({ ok: false, error: 'code expired', apiCode: '100503' });
 
     record.used = true;
     await record.save();
@@ -257,7 +267,7 @@ router.post('/auth/verify-phone-code', async (req, res) => {
 
         console.log(user)
 
-        if (!user) return res.status(404).json({ ok: false, error: 'user not found' });
+        if (!user) return res.status(404).json({ ok: false, error: 'user not found', apiCode: '100504' });
 
         const token = jwt.sign(
             { sub: user._id, email: user.email },
@@ -266,41 +276,43 @@ router.post('/auth/verify-phone-code', async (req, res) => {
         );
 
         res.cookie('auth_token', token, cookieOptions);
-        return res.json({ ok: true, message: 'Phone verified and logged in', user: { id: user._id, email: user.email, fullName: user.fullName, phone: user.phone } });
+        return res.json({ ok: true, message: 'Phone verified and logged in', user: { id: user._id, email: user.email, fullName: user.fullName, phone: user.phone }, apiCode: '100500' });
     } catch (err) {
         console.error(err);
-        return res.status(500).json({ ok: false, error: 'server error' });
+        return res.status(500).json({ ok: false, error: 'server error', apiCode: '100599' });
     }
 });
 
 router.post('/auth/login', async (req, res) => {
     try {
         const { email, password } = req.body;
-        if (!email || !password) return res.status(400).json({ ok: false, error: 'email and password required' });
+        console.log(email, password)
+        if (!email || !password) return res.status(400).json({ ok: false, error: 'email and password required', apiCode: '100601' });
 
         const user = await User.findOne({ email: email.toLowerCase() });
-        if (!user || !user.passwordHash) return res.status(400).json({ ok: false, error: 'invalid credentials' });
+        if (!user || !user.passwordHash) return res.status(400).json({ ok: false, error: 'invalid credentials', apiCode: '100602' });
 
         const okPass = await bcrypt.compare(password, user.passwordHash);
-        if (!okPass) return res.status(400).json({ ok: false, error: 'invalid credentials' });
+        if (!okPass) return res.status(400).json({ ok: false, error: 'invalid credentials', apiCode: '100603' });
 
         const token = jwt.sign({ sub: user._id, email: user.email }, process.env.JWT_SECRET || 'dev_jwt_secret', { expiresIn: process.env.JWT_EXPIRES_IN || '7d' });
 
         res.cookie('auth_token', token, cookieOptions);
 
-        return res.json({ ok: true, message: 'Logged in successfully', user: { id: user._id, email: user.email, fullName: user.fullName, phone: user.phone } });
+        return res.json({ ok: true, message: 'Logged in successfully', user: { id: user._id, email: user.email, fullName: user.fullName, phone: user.phone }, apiCode: '100600' });
     } catch (err) {
         console.error(err);
-        return res.status(500).json({ ok: false, error: 'server error' });
+        return res.status(500).json({ ok: false, error: 'server error', apiCode: '100699' });
     }
 });
 
 // Authenticated user profile
 router.get('/auth/profile', authMiddleware, async (req, res) => {
     const user = await User.findById(req.user.sub).select('-passwordHash');
-    // profile
-    if (!user) return res.status(404).json({ ok: false, error: 'not found' });
-    res.json({ ok: true, user });
+
+    console.log('user is:', user)
+    if (!user) return res.status(404).json({ ok: false, error: 'not found', apiCode: '100701' });
+    res.json({ ok: true, user, apiCode: '100700' });
 });
 
 router.post('/auth/logout', async (req, res) => {
@@ -310,10 +322,10 @@ router.post('/auth/logout', async (req, res) => {
             secure: process.env.NODE_ENV === 'production',
             sameSite: 'strict',
         });
-        return res.json({ ok: true, message: 'Logged out' });
+        return res.json({ ok: true, message: 'Logged out', apiCode: '100800' });
     } catch (err) {
         console.error(err);
-        return res.status(500).json({ ok: false, error: 'server error' });
+        return res.status(500).json({ ok: false, error: 'server error', apiCode: '100699' });
     }
 });
 
