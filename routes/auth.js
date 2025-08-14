@@ -21,13 +21,14 @@ const sendCodeLimiter = rateLimit({ windowMs: 60 * 1000, max: 20, message: { err
 const PhoneVerificationCode = require('../models/PhoneVerificationCode');
 const { sendVerificationSMS } = require('../utils/sms');
 
+// when sending cookie from auth API
 const cookieOptions = {
     httpOnly: true,
-    secure: process.env.NODE_ENV === 'production',        // production => true (HTTPS)
+    secure: process.env.NODE_ENV === 'production',        // true only on HTTPS prod
     sameSite: process.env.NODE_ENV === 'production' ? 'None' : 'Lax',
-    // if you want cookie to be available across subdomains in prod:
-    domain: process.env.COOKIE_DOMAIN || undefined,      // e.g. '.example.com' in prod
+    path: '/',                // important so cookie is available across routes
     maxAge: 7 * 24 * 60 * 60 * 1000
+    // domain: undefined in dev; only set domain in prod if you control shared domain
 };
 
 // Parse helper
