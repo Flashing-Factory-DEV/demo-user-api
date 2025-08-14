@@ -25,7 +25,7 @@ const { sendVerificationSMS } = require('../utils/sms');
 const cookieOptions = {
     httpOnly: true,
     secure: process.env.NODE_ENV === 'production',        // true only on HTTPS prod
-    sameSite: process.env.NODE_ENV === 'production' ? 'None' : 'Lax',
+    sameSite: process.env.COOKIE_SAME_SITE,
     path: '/',                // important so cookie is available across routes
     maxAge: 7 * 24 * 60 * 60 * 1000
     // domain: undefined in dev; only set domain in prod if you control shared domain
