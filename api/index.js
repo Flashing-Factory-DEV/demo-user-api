@@ -9,21 +9,26 @@ const { connectDB } = require('../config/db');
 const authRoutes = require('../routes/auth');
 const app = express();
 
-const FRONTEND = process.env.FRONTEND_URL
-
 app.use(express.json());
+
+const FRONTEND = process.env.FRONTEND_URL || 'http://localhost:3000'; // set this in env
+const ALLOWED_ORIGINS = [FRONTEND, 'http://127.0.0.1:3000']; // add any dev host variations
+
 const corsOptions = {
     origin: (origin, callback) => {
-        // origin is undefined for non-browser requests (curl, Postman) — allow those too
-        callback(null, origin || true) // echo origin or allow non-browser
+        // allow curl/Postman (origin === undefined), allow explicitly listed origins otherwise
+        if (!origin) return callback(null, true);
+        if (ALLOWED_ORIGINS.includes(origin)) return callback(null, true);
+        return callback(new Error('CORS policy: Origin not allowed'), false);
     },
-    credentials: true, // allow Set-Cookie and Cookie
+    credentials: true,
     methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-    allowedHeaders: ['Content-Type', 'Authorization'],
-}
+    allowedHeaders: ['Content-Type', 'Authorization'], // request headers
+    // no need to add Set-Cookie here
+};
 
-app.use(cors(corsOptions))
-app.options('*', cors(corsOptions)) // preflight handler
+app.use(cors(corsOptions));
+app.options('*', cors(corsOptions));
 app.use(cookieParser());
 
 // mount routes exactly as before

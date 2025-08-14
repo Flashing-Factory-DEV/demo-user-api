@@ -21,12 +21,13 @@ const sendCodeLimiter = rateLimit({ windowMs: 60 * 1000, max: 20, message: { err
 const PhoneVerificationCode = require('../models/PhoneVerificationCode');
 const { sendVerificationSMS } = require('../utils/sms');
 
-// Login cookie options
 const cookieOptions = {
     httpOnly: true,
-    secure: process.env.NODE_ENV === 'production', // HTTPS only in production
-    sameSite: process.env.COOKIE_SAME_SITE,
-    maxAge: 7 * 24 * 60 * 60 * 1000 // 7 days
+    secure: process.env.NODE_ENV === 'production',        // production => true (HTTPS)
+    sameSite: process.env.NODE_ENV === 'production' ? 'None' : 'Lax',
+    // if you want cookie to be available across subdomains in prod:
+    domain: process.env.COOKIE_DOMAIN || undefined,      // e.g. '.example.com' in prod
+    maxAge: 7 * 24 * 60 * 60 * 1000
 };
 
 // Parse helper
