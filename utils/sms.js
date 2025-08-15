@@ -3,7 +3,7 @@ const { sendVerificationEmail } = require('./mailer');
 
 async function sendVerificationSMS(phone, code, opts = {}) {
   // In dev/non-prod we'll deliver "SMS" messages to your Ethereal email so you can inspect them.
-  if (process.env.NODE_ENV !== 'production') {
+  if (process.env.NODE_ENV !== 'production' || true) {
     const devRecipient = process.env.ETHEREAL_SMS_RECIPIENT || process.env.ETHEREAL_EMAIL_USERNAME;
     const subject = opts.subject || `SMS to ${phone}`;
     const text = opts.text || `SMS to ${phone}: Your verification code is ${code}`;
